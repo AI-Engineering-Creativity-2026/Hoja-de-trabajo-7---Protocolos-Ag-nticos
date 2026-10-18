@@ -59,3 +59,7 @@ python -m protocols.client
 
 Los servidores emiten logs de solicitudes y ejecuciones de herramientas.
 La terminal permite realizar varias consultas y salir con `Bye` o `Ctrl-C`.
+
+## Video de funcionamiento
+
+[Ver el video de la implementación](https://youtu.be/0w9NhwwIQfQ).
