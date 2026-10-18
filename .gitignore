@@ -6,3 +6,4 @@ venv/
 data/citas.json
 node_modules/
 .promptfoo/
+artifacts/*.log
