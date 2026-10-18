@@ -7,6 +7,8 @@ Los evals, reportes y reglas de negocio de `main` se conservan sin cambios.
 Repositorio de entrega: [Hoja de trabajo 7 — Protocolos Agénticos](https://github.com/AI-Engineering-Creativity-2026/Hoja-de-trabajo-7---Protocolos-Ag-nticos).
 El repositorio conserva la base de HDT6 y la implementación de HDT7.
 
+Los tres integrantes del equipo partimos de la misma base de código de Parachute S.A., desarrollada en las hojas anteriores. Con fines de aprendizaje, decidimos realizar por separado la implementación de esta hoja de trabajo, para que cada integrante practicara directamente la integración de MCP y A2A.
+
 El cliente de terminal descubre **un agente A2A** con tres skills: FAQs, clima
 y citas. Internamente un supervisor central coordina tres workers del SDK de
 OpenAI Agents. Cada worker consume herramientas del **mismo servidor MCP**
