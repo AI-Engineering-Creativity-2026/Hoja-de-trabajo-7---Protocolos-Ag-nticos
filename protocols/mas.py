@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import AsyncExitStack
+from dataclasses import replace
 import datetime as dt
 from urllib.parse import urlparse
 
@@ -10,6 +11,7 @@ import httpx2
 from agents import Agent, Runner, RunConfig, ModelSettings
 from agents.mcp import MCPServerStreamableHttp, create_static_tool_filter
 from shared.parachute import agent_model, agent_model_settings
+from protocols.evidence import EvidenceHooks, TurnEvidence
 
 
 class MultiAgentSystem:
@@ -22,7 +24,8 @@ class MultiAgentSystem:
 
     async def start(self):
         model = agent_model()
-        settings = agent_model_settings() or ModelSettings()
+        settings = replace(agent_model_settings() or ModelSettings(), tool_choice="required")
+        evidence_hooks = EvidenceHooks()
         workers = []
         for role, tool, description in [
             ("FAQWorker", "search_knowledge_base", "Responde consultas usando únicamente las FAQs devueltas; si no hay evidencia, admite que no puedes responder."),
@@ -32,13 +35,14 @@ class MultiAgentSystem:
             server = await self.stack.enter_async_context(MCPServerStreamableHttp(
                 name=role, params={"url": self.url, "timeout": 90,
                                    **({"httpx_client_factory": self.http_client_factory} if self.http_client_factory else {})},
-                cache_tools_list=True, client_session_timeout_seconds=90,
+                cache_tools_list=True, client_session_timeout_seconds=90, use_structured_content=True,
                 tool_filter=create_static_tool_filter(allowed_tool_names=[tool]),
             ))
             workers.append(Agent(name=role, instructions=f"ROLE={role}\n{description}",
-                                 model=model, model_settings=settings, mcp_servers=[server]))
+                                 model=model, model_settings=settings, mcp_servers=[server],
+                                 tool_use_behavior="stop_on_first_tool"))
         self.supervisor = Agent(
-            name="SupervisorCentral", model=model, model_settings=settings,
+            name="SupervisorCentral", model=model, model_settings=replace(settings, tool_choice="auto"),
             instructions=("ROLE=SupervisorCentral\nEres el asistente de Parachute S.A. Responde en español. "
                           "Usa consultar_faq para toda pregunta de FAQs; no uses conocimiento externo. "
                           "Para agendar llama consultar_clima primero; si no hay error y es IDEAL o MARGINAL, "
@@ -47,7 +51,7 @@ class MultiAgentSystem:
                           "pendiente de confirmación del instructor. MARGINAL por viento: solo tándem experimentado. "
                           "Pide fecha si falta. Acepta solo YYYY-MM-DD en los próximos 16 días incluyendo hoy. "
                           f"Hoy es {dt.date.today().isoformat()}."),
-            tools=[worker.as_tool(tool_name=name, tool_description=desc) for worker, name, desc in zip(
+            tools=[worker.as_tool(tool_name=name, tool_description=desc, hooks=evidence_hooks) for worker, name, desc in zip(
                 workers, ["consultar_faq", "consultar_clima", "calendarizar_cita"],
                 ["Consulta FAQs oficiales", "Consulta clima y seguridad", "Agenda tentativamente reconsultando clima"],
             )],
@@ -57,6 +61,10 @@ class MultiAgentSystem:
         await self.stack.aclose()
 
     async def invoke(self, history: list[dict], text: str) -> tuple[str, list[dict]]:
-        result = await Runner.run(self.supervisor, history + [{"role": "user", "content": text}],
-                                  max_turns=16, run_config=RunConfig(tracing_disabled=True))
-        return str(result.final_output), result.to_input_list()
+        evidence = TurnEvidence()
+        await Runner.run(self.supervisor, history + [{"role": "user", "content": text}],
+                         context=evidence, max_turns=16, run_config=RunConfig(tracing_disabled=True))
+        answer = evidence.answer()
+        # La memoria también conserva solo la respuesta validada, no la prosa del modelo.
+        history = history + [{"role": "user", "content": text}, {"role": "assistant", "content": answer}]
+        return answer, history
